@@ -163,7 +163,8 @@ export default function AdminPage() {
         setStorageStatus((prev) => (prev ? { ...prev, lastSync: result.lastSync || null } : null));
         setError(null);
       } else {
-        setError(result.error || 'Sync failed');
+        const details = result.details ? ` Details: ${result.details}` : '';
+        setError(`${result.error || 'Sync failed'}${details}`);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to sync');

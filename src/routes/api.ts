@@ -248,15 +248,17 @@ adminApi.get('/storage', async (c) => {
 adminApi.post('/storage/sync', async (c) => {
   const sandbox = c.get('sandbox');
 
-  const result = await syncToR2(sandbox, c.env);
+  try {
+    const result = await syncToR2(sandbox, c.env);
 
-  if (result.success) {
-    return c.json({
-      success: true,
-      message: 'Sync completed successfully',
-      lastSync: result.lastSync,
-    });
-  } else {
+    if (result.success) {
+      return c.json({
+        success: true,
+        message: 'Sync completed successfully',
+        lastSync: result.lastSync,
+      });
+    }
+
     const status = result.error?.includes('not configured') ? 400 : 500;
     return c.json(
       {
@@ -265,6 +267,17 @@ adminApi.post('/storage/sync', async (c) => {
         details: result.details,
       },
       status,
+    );
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    console.error('Storage sync failed:', err);
+    return c.json(
+      {
+        success: false,
+        error: 'Sync error',
+        details: message,
+      },
+      500,
     );
   }
 });

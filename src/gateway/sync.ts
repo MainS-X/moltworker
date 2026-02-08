@@ -11,6 +11,29 @@ export interface SyncResult {
   details?: string;
 }
 
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'"'"'`)}'`;
+}
+
+async function hasFile(
+  sandbox: Sandbox,
+  path: string,
+): Promise<{ exists: boolean; stdout?: string; stderr?: string }> {
+  // Use stdout checks instead of exit codes to avoid stale status/exit code races.
+  const quotedPath = shellQuote(path);
+  const proc = await sandbox.startProcess(
+    `sh -c "if [ -f ${quotedPath} ]; then echo FOUND; fi"`
+  );
+  await waitForProcess(proc, 5000);
+  const logs = await proc.getLogs();
+  const stdout = logs.stdout || '';
+  const stderr = logs.stderr || '';
+  if (stderr.trim()) {
+    console.warn('hasFile stderr:', stderr.trim());
+  }
+  return { exists: stdout.includes('FOUND'), stdout, stderr };
+}
+
 /**
  * Sync OpenClaw config and workspace from container to R2 for persistence.
  *
@@ -43,21 +66,24 @@ export async function syncToR2(sandbox: Sandbox, env: MoltbotEnv): Promise<SyncR
 
   // Determine which config directory exists
   // Check new path first, fall back to legacy
-  // Use exit code (0 = exists) rather than stdout parsing to avoid log-flush races
   let configDir = '/root/.openclaw';
   try {
-    const checkNew = await sandbox.startProcess('test -f /root/.openclaw/openclaw.json');
-    await waitForProcess(checkNew, 5000);
-    if (checkNew.exitCode !== 0) {
-      const checkLegacy = await sandbox.startProcess('test -f /root/.clawdbot/clawdbot.json');
-      await waitForProcess(checkLegacy, 5000);
-      if (checkLegacy.exitCode === 0) {
+    const hasNew = await hasFile(sandbox, '/root/.openclaw/openclaw.json');
+    if (!hasNew.exists) {
+      const hasLegacy = await hasFile(sandbox, '/root/.clawdbot/clawdbot.json');
+      if (hasLegacy.exists) {
         configDir = '/root/.clawdbot';
       } else {
+        const stderrDetails = [hasNew.stderr, hasLegacy.stderr]
+          .map((value) => value?.trim())
+          .filter(Boolean)
+          .join('\n');
         return {
           success: false,
           error: 'Sync aborted: no config file found',
-          details: 'Neither openclaw.json nor clawdbot.json found in config directory.',
+          details: stderrDetails
+            ? `Neither openclaw.json nor clawdbot.json found in config directory. Stderr:\n${stderrDetails}`
+            : 'Neither openclaw.json nor clawdbot.json found in config directory.',
         };
       }
     }

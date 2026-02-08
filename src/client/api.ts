@@ -76,10 +76,11 @@ async function apiRequest<T>(path: string, options: globalThis.RequestInit = {})
     throw new AuthError('Unauthorized - please log in via Cloudflare Access');
   }
 
-  const data = (await response.json()) as T & { error?: string };
+  const data = (await response.json()) as T & { error?: string; details?: string };
 
   if (!response.ok) {
-    throw new Error(data.error || `API error: ${response.status}`);
+    const details = data.details ? ` Details: ${data.details}` : '';
+    throw new Error(`${data.error || `API error: ${response.status}`}${details}`);
   }
 
   return data;
